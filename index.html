@@ -1,1 +1,134 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aliong Car Security (Cloud)</title>
+    <!-- Memanggil Library MQTT via WebSockets -->
+    <script src="https://cloudflare.com"></script>
+    <style>
+        :root { --bg: #090d16; --card: #131a2e; --cyan: #00f3ff; --red: #ff2a5f; --green: #39ff14; --orange: #ffaa00; --text: #f1f5f9; --muted: #64748b; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 20px 15px; display: flex; flex-direction: column; align-items: center; user-select: none; min-height: 100vh; }
+        .app-container { width: 100%; max-width: 420px; }
+        header { text-align: center; margin-bottom: 20px; }
+        h1 { color: var(--cyan); font-size: 1.5rem; letter-spacing: 2px; text-shadow: 0 0 15px rgba(0,243,255,0.4); margin-bottom: 5px; }
+        .status-bar { font-size: 0.85rem; color: var(--muted); font-weight: 700; text-transform: uppercase; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; width: 100%; margin-bottom: 15px; }
+        .btn { background: var(--card); border: 1px solid #1e293b; border-radius: 16px; padding: 22px 10px; text-align: center; font-weight: 700; font-size: 1.05rem; color: #fff; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+        .btn:active { transform: scale(0.96); }
+        .btn-lock { border-color: rgba(255,42,95,0.3); color: var(--red); }
+        .btn-unlock { border-color: rgba(57,255,20,0.3); color: var(--green); }
+        .full { grid-column: span 2; }
+        .sub-txt { font-size: 0.75rem; font-weight: 500; color: var(--muted); margin-top: 2px; text-transform: uppercase; }
+        .panel { background: var(--card); border: 1px solid #1e293b; border-radius: 20px; padding: 18px; box-shadow: 0 6px 16px rgba(0,0,0,0.5); }
+        .panel-title { font-weight: 700; font-size: 0.9rem; letter-spacing: 1px; color: #94a3b8; display: block; margin-bottom: 12px; }
+        .indicator-box { display: flex; justify-content: space-around; background: #0b1120; padding: 12px; border-radius: 12px; border: 1px solid #1e293b; margin-bottom: 15px;}
+        .ind { font-size: 0.8rem; color: #475569; display: flex; align-items: center; gap: 6px; font-weight: 700; }
+        .ind.active { color: var(--orange); text-shadow: 0 0 10px var(--orange); }
+        .flex { display: flex; gap: 10px; align-items: center; }
+        input[type="number"] { width: 70px; height: 44px; background: #090d16; border: 1px solid #334155; color: #fff; border-radius: 10px; text-align: center; font-size: 1.1rem; font-weight: 700; outline: none; }
+        .btn-act { flex: 2; height: 44px; background: var(--cyan); color: #090d16; border: none; border-radius: 10px; font-weight: 700; font-size: 0.95rem; cursor: pointer; text-transform: uppercase;}
+        .btn-danger { flex: 1; background: var(--red); color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>ALIONG BRIO ALARM</h1>
+            <div class="status-bar" id="sys-status">MENGHUBUNGKAN KE BROKER CLOUD...</div>
+        </header>
+        <div class="grid">
+            <div class="btn btn-lock" onclick="sendCmd('lock')">🔒 <span>LOCK</span></div>
+            <div class="btn btn-unlock" onclick="sendCmd('unlock')">🔓 <span>UNLOCK</span></div>
+            <div class="btn full" id="btn-kontak" onclick="sendCmd('toggle-kontak')">
+                🔑 <span>KUNCI KONTAK</span>
+                <div class="sub-txt" id="kontak-txt">OFF</div>
+            </div>
+            <div class="btn full" id="btn-engine" onclick="sendCmd('toggle-engine')">
+                🛡️ <span>ENGINE LOCK</span>
+                <div class="sub-txt" id="engine-txt">READY</div>
+            </div>
+            <div class="panel full">
+                <span class="panel-title">📡 FEEDBACK REAL-TIME (CLOUD)</span>
+                <div class="indicator-box">
+                    <div class="ind" id="ind-horn">📢 SIREN: OFF</div>
+                    <div class="ind" id="ind-kontak">⚡ KONTAK: OFF</div>
+                </div>
+                <span class="panel-title">🔊 UTALITAS ALARM</span>
+                <div class="flex">
+                    <input type="number" id="sirine-sec" value="5" min="1" max="60">
+                    <button class="btn-act" onclick="startSirine()">BUNYI</button>
+                    <button class="btn-act btn-danger" onclick="sendCmd('stop-sirine')">MATI</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
+    <script>
+        // --- KONFIGURASI MQTT TOPIC (Harus Sama Dengan ESP8266) ---
+        const TOPIC_CMD    = "aliong/brio/cmd";
+        const TOPIC_STATUS = "aliong/brio/status";
+        
+        // Menggunakan Broker Publik HiveMQ (WebSockets Port 8000)
+        const client = mqtt.connect('ws://://hivemq.com');
+        
+        client.on('connect', () => {
+            document.getElementById('sys-status').innerText = "TERHUBUNG KE CLOUD (SIAGA)";
+            document.getElementById('sys-status').style.color = "var(--green)";
+            client.subscribe(TOPIC_STATUS);
+        });
+
+        client.on('close', () => {
+            document.getElementById('sys-status').innerText = "TERPUTUS DARI BROKER";
+            document.getElementById('sys-status').style.color = "var(--muted)";
+        });
+
+        function sendCmd(command) {
+            client.publish(TOPIC_CMD, command);
+        }
+
+        function startSirine() {
+            let sec = document.getElementById('sirine-sec').value;
+            client.publish(TOPIC_CMD, "sirine:" + sec);
+        }
+
+        // Menerima data feedback dari mobil secara Instan & Real-time
+        client.on('message', (topic, message) => {
+            if (topic === TOPIC_STATUS) {
+                try {
+                    const data = JSON.parse(message.toString());
+                    const eBtn = document.getElementById('btn-engine'); const eTxt = document.getElementById('engine-txt');
+                    const kBtn = document.getElementById('btn-kontak'); const kTxt = document.getElementById('kontak-txt');
+                    const sBar = document.getElementById('sys-status'); const iHorn = document.getElementById('ind-horn'); const iKontak = document.getElementById('ind-kontak');
+                    
+                    sBar.innerText = data.sys_armed ? "SISTEM AKTIF (SIAGA LOKAL/CLOUD)" : "SISTEM NON-AKTIF (PERJALANAN)";
+                    sBar.style.color = data.sys_armed ? "var(--red)" : "var(--green)";
+                    
+                    if (data.engine_locked) {
+                        eBtn.style.borderColor = 'var(--red)'; eBtn.style.color = 'var(--red)'; eBtn.style.background = 'rgba(255,42,95,0.05)'; eTxt.innerText = "STATUS: MESIN DIKUNCI MATI";
+                    } else {
+                        eBtn.style.borderColor = '#1e293b'; eBtn.style.color = '#fff'; eBtn.style.background = 'var(--card)'; eTxt.innerText = "STATUS: AMAN (SIAP STARTER)";
+                    }
+                    
+                    if (data.relay_kontak_state) {
+                        kBtn.style.borderColor = 'var(--green)'; kBtn.style.color = 'var(--green)'; kBtn.style.background = 'rgba(57,255,20,0.05)'; kTxt.innerText = "STATUS: SAKELAR ON";
+                    } else {
+                        kBtn.style.borderColor = '#1e293b'; kBtn.style.color = '#fff'; kBtn.style.background = 'var(--card)'; kTxt.innerText = "STATUS: SAKELAR OFF";
+                    }
+                    
+                    if (data.kontak_on) {
+                        iKontak.innerText = "⚡ KONTAK: ON"; iKontak.classList.add('active');
+                    } else {
+                        iKontak.innerText = "⚡ KONTAK: OFF"; iKontak.classList.remove('active');
+                    }
+                    
+                    if(data.sirine_active) { iHorn.innerText = "📢 KLAKSON: AKTIF"; iHorn.classList.add('active'); }
+                    else { iHorn.innerText = "📢 KLAKSON: OFF"; iHorn.classList.remove('active'); }
+                    
+                } catch (e) { console.log("Gagal membaca status JSON"); }
+            }
+        });
+    </script>
+</body>
+</html>
