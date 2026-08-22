@@ -79,8 +79,8 @@
         const TOPIC_CMD    = "aliong/brio/cmd";
         const TOPIC_STATUS = "aliong/brio/status";
         
-        // Menggunakan Broker Publik HiveMQ (WebSockets Port 8884)
-        const client = mqtt.connect('wss://://hivemq.com');
+       
+        const client = mqtt.connect('wss://test.mosquitto.org:8081/mqtt');
         
         client.on('connect', () => {
             document.getElementById('sys-status').innerText = "TERHUBUNG KE CLOUD (SIAGA)";
